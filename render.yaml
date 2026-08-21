@@ -1,0 +1,35 @@
+services:
+  - type: worker
+    name: nlmini-12-autobot
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PYTHONUTF8
+        value: "1"
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHANNEL_ID
+        value: "@NLMINI_12"
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: FETCH_INTERVAL_MINUTES
+        value: "30"
+      - key: POST_DELAY_SECONDS
+        value: "5"
+      - key: MAX_POSTS_PER_CYCLE
+        value: "5"
+      - key: DATABASE_URL
+        value: "sqlite+aiosqlite:///./data/news_bot.db"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: OPENAI_API_KEY
+        value: ""
+      - key: ANTHROPIC_API_KEY
+        value: ""
