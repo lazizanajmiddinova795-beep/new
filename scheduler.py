@@ -25,6 +25,10 @@ from fetcher import ArticleItem, fetch_all_feeds
 from games import run_daily_game
 from challenges import run_weekly_challenge
 from media_fetcher import run_media_post
+from emotional_posts import run_emotional_post
+from video_fetcher import run_daily_video
+from recommendations import run_weekly_recommendation
+
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +367,65 @@ def setup_scheduler(
         coalesce=True,
         max_instances=1,
     )
+
+    # Ertalabki emotional post har kuni 09:00 da
+    async def scheduled_emotional() -> None:
+        try:
+            await run_emotional_post(bot, config, ai_processor)
+        except Exception as e:
+            logger.error("Emotional post xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_emotional,
+        trigger="cron",
+        hour=9,
+        minute=0,
+        id="emotional_post_job",
+        name="Ertalabki emotional post",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Kunlik video-fakt har kuni 14:00 da
+    async def scheduled_video() -> None:
+        try:
+            await run_daily_video(bot, config, ai_processor)
+        except Exception as e:
+            logger.error("Video-fakt xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_video,
+        trigger="cron",
+        hour=14,
+        minute=0,
+        id="daily_video_job",
+        name="Kunlik video fakt",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Haftalik tavsiya har yakshanba 10:00 da
+    async def scheduled_recommendation() -> None:
+        try:
+            await run_weekly_recommendation(bot, config, ai_processor)
+        except Exception as e:
+            logger.error("Haftalik tavsiya xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_recommendation,
+        trigger="cron",
+        day_of_week="sun",
+        hour=10,
+        minute=0,
+        id="weekly_recommendation_job",
+        name="Haftalik tavsiya",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
 
     logger.info(
         "Scheduler sozlandi. Har %d daqiqada ishlaydi.",
