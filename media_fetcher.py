@@ -5,7 +5,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import URLInputFile
 from ai_processor import AIProcessor
-from config import Config
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,15 @@ QOIDALAR:
 
 USER_PROMPT = "Texnologiya, sun'iy intellekt, kosmos yoki zamonaviy ilm-fan haqida hozirgacha ko'pchilik bilmagan juda qiziqarli, hayratlanarli fakt yarating."
 
-async def run_media_post(bot: Bot, config: Config, ai_processor: AIProcessor) -> None:
+async def run_media_post(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Kunlik yoki vaqti-vaqti bilan qiziqarli fakt va rasm yuborish funksiyasi."""
     logger.info("Media fact post sikli boshlandi...")
+
+    active_channels = await db.get_active_channels()
+    target_channels = [ch for ch in active_channels if ch.setting_videos]
+    if not target_channels:
+        logger.info("setting_videos yoqilgan faol kanallar yo'q.")
+        return
     
     # 1. AI orqali qiziqarli fakt yaratish
     fact_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)

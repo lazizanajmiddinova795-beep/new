@@ -5,7 +5,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from ai_processor import AIProcessor
-from config import Config
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -37,34 +37,40 @@ def _make_challenge_keyboard(channel_id: str) -> InlineKeyboardMarkup:
         ]
     )
 
-async def run_weekly_challenge(bot: Bot, config: Config, ai_processor: AIProcessor) -> None:
+async def run_weekly_challenge(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Har shanba soat 23:00 da chellenj yaratish va yuborish funksiyasi."""
     logger.info("Weekly challenge sikli boshlandi...")
     
+    active_channels = await db.get_active_channels()
+    target_channels = [ch for ch in active_channels if ch.setting_news]
+    if not target_channels:
+        logger.info("Chellenjlar yoqilgan faol kanallar yo'q.")
+        return
+
     challenge_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)
     if not challenge_text:
         logger.error("Chellenj uchun AI matn yarata olmadi.")
         return
 
     final_text = f"🎯 **Haftalik Chellenj!**\n\n{challenge_text}\n\n#chellenj #motivatsiya #maqsad"
-    keyboard = _make_challenge_keyboard(config.channel_id)
 
-    try:
-        message = await bot.send_message(
-            chat_id=config.channel_id,
-            text=final_text,
-            reply_markup=keyboard,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        logger.info("Chellenj muvaffaqiyatli yuborildi! Message ID: %d", message.message_id)
-    except Exception as e:
-        logger.error("Chellenj yuborishda xato: %s", e)
+    for ch in target_channels:
+        keyboard = _make_challenge_keyboard(ch.channel_id)
         try:
-            plain_text = final_text.replace("**", "").replace("*", "")
-            await bot.send_message(
-                chat_id=config.channel_id,
-                text=plain_text,
-                reply_markup=keyboard
+            message = await bot.send_message(
+                chat_id=ch.channel_id,
+                text=final_text,
+                parse_mode=ParseMode.MARKDOWN
             )
-        except Exception as retry_err:
-            logger.error("Plain text bilan jo'natishda ham xato: %s", retry_err)
+            logger.info("Yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("Yuborishda xato (%s): %s", ch.channel_id, e)
+            try:
+                plain_text = final_text.replace("**", "").replace("*", "")
+                await bot.send_message(
+                    chat_id=ch.channel_id,
+                    text=plain_text,
+                    reply_markup=keyboard
+                )
+            except Exception as retry_err:
+                logger.error("Plain text xato: %s", retry_err)

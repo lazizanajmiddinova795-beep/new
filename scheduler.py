@@ -155,6 +155,14 @@ async def run_posting_cycle(
     logger.info("=" * 50)
     logger.info("Yangi posting sikli boshlandi.")
 
+    # Faol kanallarni olish
+    active_channels = await db.get_active_channels()
+    news_channels = [ch for ch in active_channels if ch.setting_news]
+    
+    if not news_channels:
+        logger.info("Yangiliklar uqish yoqilgan faol kanallar yo'q.")
+        return
+
     # --- 1. RSS manbalardan maqolalar yig'ish ---
     try:
         articles = await fetch_all_feeds(config.rss_feeds)
@@ -166,108 +174,54 @@ async def run_posting_cycle(
         logger.info("Hech qanday maqola topilmadi. Sikl yakunlandi.")
         return
 
-    logger.info("Jami %d maqola yig'ildi.", len(articles))
+    # Eng so'nggi max_posts_per_cycle ta maqolani olamiz
+    articles_to_process = articles[: config.max_posts_per_cycle]
+    
+    for article in articles_to_process:
+        # Tekshiramiz: Ushbu maqola hamma news_channels ga yuborilganmi?
+        channels_to_send = []
+        for ch in news_channels:
+            is_pub = await db.is_article_published(article.article_id, ch.channel_id)
+            if not is_pub:
+                channels_to_send.append(ch)
+                
+        if not channels_to_send:
+            continue # Hamma kanalga yuborilgan
 
-    # --- 2. Yangi maqolalarni filtrlash ---
-    new_articles = []
-    for article in articles:
-        try:
-            already_published = await db.is_article_published(article.article_id)
-            if not already_published:
-                new_articles.append(article)
-        except Exception as e:
-            logger.error(
-                "Bazani tekshirishda xato (%s): %s",
-                article.article_id[:30],
-                e,
-            )
-
-    if not new_articles:
-        logger.info("Barcha maqolalar allaqachon yuborilgan. Sikl yakunlandi.")
-        return
-
-    logger.info(
-        "%d ta yangi maqola topildi (limit: %d).",
-        len(new_articles),
-        config.max_posts_per_cycle,
-    )
-
-    # Siklda yuborish limitini qo'llash
-    articles_to_post: list[ArticleItem] = new_articles[: config.max_posts_per_cycle]
-    sent_count = 0
-    failed_count = 0
-
-    # --- 3-4-5. AI qayta ishlash → Yuborish → Saqlash ---
-    for article in articles_to_post:
-        logger.info(
-            "Qayta ishlanmoqda [%d/%d]: '%s'",
-            sent_count + failed_count + 1,
-            len(articles_to_post),
-            article.title[:60],
-        )
-
-        # AI qayta ishlash
+        # Agar yuborilmagan kanallar bo'lsa, AI dan o'tkazamiz
+        logger.info("Qayta ishlanmoqda: '%s'", article.title[:60])
         try:
             processed = await ai_processor.process_article(article)
         except Exception as e:
-            logger.error(
-                "AI qayta ishlashda xato ('%s'): %s",
-                article.title[:40],
-                e,
-                exc_info=True,
-            )
-            failed_count += 1
+            logger.error("AI qayta ishlashda xato: %s", e, exc_info=True)
             continue
 
         if not processed:
-            logger.warning(
-                "AI post yarata olmadi: '%s'. O'tkazib yuborildi.",
-                article.title[:60],
-            )
-            # Takrorlanmasligi uchun bazaga yozamiz (is_sent=False)
-            try:
-                await db.save_article(
-                    article_id=article.article_id,
-                    title=article.title,
-                    source_url=article.source_url,
-                    is_sent=False,
-                )
-            except Exception as db_err:
-                logger.error("Bazaga yozishda xato: %s", db_err)
-            failed_count += 1
+            # AI muvaffaqiyatsiz bo'lsa, xatoni yozamiz
+            for ch in channels_to_send:
+                await db.save_article(article.article_id, ch.channel_id, article.title, article.source_url, None, False)
             continue
 
-        # Telegram ga yuborish
-        message_id = await _send_post_to_channel(
-            bot=bot,
-            channel_id=config.channel_id,
-            post_text=processed.text,
-            source_url=processed.source_url,
-            delay_seconds=config.post_delay_seconds,
-        )
-
-        # Bazaga saqlash
-        try:
+        # Har bir kanalga yuboramiz
+        for ch in channels_to_send:
+            message_id = await _send_post_to_channel(
+                bot=bot,
+                channel_id=ch.channel_id,
+                post_text=processed.text,
+                source_url=processed.source_url,
+                delay_seconds=config.post_delay_seconds,
+            )
+            
             await db.save_article(
                 article_id=article.article_id,
+                channel_id=ch.channel_id,
                 title=article.title,
                 source_url=article.source_url,
                 telegram_message_id=message_id,
                 is_sent=message_id is not None,
             )
-        except Exception as db_err:
-            logger.error("Bazaga yozishda xato: %s", db_err)
 
-        if message_id:
-            sent_count += 1
-        else:
-            failed_count += 1
-
-    logger.info(
-        "Sikl yakunlandi. Yuborildi: %d | Muvaffaqiyatsiz: %d",
-        sent_count,
-        failed_count,
-    )
+    logger.info("Sikl yakunlandi.")
     logger.info("=" * 50)
 
 
@@ -313,7 +267,7 @@ def setup_scheduler(
     # Media faktlarni har kuni 18:00 da yuborish
     async def scheduled_media() -> None:
         try:
-            await run_media_post(bot, config, ai_processor)
+            await run_media_post(bot, db, ai_processor)
         except Exception as e:
             logger.error("Media fakt xatosi: %s", e)
 
@@ -332,7 +286,7 @@ def setup_scheduler(
     # So'z o'yinlari har kuni 22:00 da yuborish
     async def scheduled_game() -> None:
         try:
-            await run_daily_game(bot, config, ai_processor)
+            await run_daily_game(bot, db, ai_processor)
         except Exception as e:
             logger.error("Daily game xatosi: %s", e)
 
@@ -351,7 +305,7 @@ def setup_scheduler(
     # Haftalik chellenj har shanba 23:00 da yuborish
     async def scheduled_challenge() -> None:
         try:
-            await run_weekly_challenge(bot, config, ai_processor)
+            await run_weekly_challenge(bot, db, ai_processor)
         except Exception as e:
             logger.error("Weekly challenge xatosi: %s", e)
 
@@ -371,7 +325,7 @@ def setup_scheduler(
     # Ertalabki emotional post har kuni 09:00 da
     async def scheduled_emotional() -> None:
         try:
-            await run_emotional_post(bot, config, ai_processor)
+            await run_emotional_post(bot, db, ai_processor)
         except Exception as e:
             logger.error("Emotional post xatosi: %s", e)
 
@@ -390,7 +344,7 @@ def setup_scheduler(
     # Kunlik video-fakt har kuni 14:00 da
     async def scheduled_video() -> None:
         try:
-            await run_daily_video(bot, config, ai_processor)
+            await run_daily_video(bot, db, ai_processor)
         except Exception as e:
             logger.error("Video-fakt xatosi: %s", e)
 
@@ -409,7 +363,7 @@ def setup_scheduler(
     # Haftalik tavsiya har yakshanba 10:00 da
     async def scheduled_recommendation() -> None:
         try:
-            await run_weekly_recommendation(bot, config, ai_processor)
+            await run_weekly_recommendation(bot, db, ai_processor)
         except Exception as e:
             logger.error("Haftalik tavsiya xatosi: %s", e)
 

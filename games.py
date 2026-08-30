@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from ai_processor import AIProcessor
-from config import Config
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,16 @@ QOIDALAR:
 
 USER_PROMPT = "Bugun uchun juda qiziqarli mantiqiy topishmoq yoki so'z o'yini tuzib bering. Uchta tilda bo'lsin. Javobni eng pastda spoiler qilib yozing."
 
-async def run_daily_game(bot: Bot, config: Config, ai_processor: AIProcessor) -> None:
+async def run_daily_game(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Har kuni soat 22:00 da o'yin yaratish va yuborish funksiyasi."""
     logger.info("Daily game sikli boshlandi...")
     
+    active_channels = await db.get_active_channels()
+    target_channels = [ch for ch in active_channels if ch.setting_games]
+    if not target_channels:
+        logger.info("O'yinlar yoqilgan faol kanallar yo'q.")
+        return
+
     game_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)
     if not game_text:
         logger.error("O'yin uchun AI matn yarata olmadi.")
@@ -32,22 +38,21 @@ async def run_daily_game(bot: Bot, config: Config, ai_processor: AIProcessor) ->
 
     final_text = f"🎮 **Kechki Mantiq O'yini!**\n\n{game_text}\n\n#oyin #mantiq #quiz"
 
-    try:
-        # Markdown parsing xatoliklarini kamaytirish uchun xavfsiz jo'natamiz
-        message = await bot.send_message(
-            chat_id=config.channel_id,
-            text=final_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        logger.info("O'yin muvaffaqiyatli yuborildi! Message ID: %d", message.message_id)
-    except Exception as e:
-        logger.error("O'yin yuborishda xato: %s", e)
-        # Agar Markdown xatosi bo'lsa, plain text bilan qayta urinib ko'rish
+    for ch in target_channels:
         try:
-            plain_text = final_text.replace("**", "").replace("*", "")
-            await bot.send_message(
-                chat_id=config.channel_id,
-                text=plain_text
+            message = await bot.send_message(
+                chat_id=ch.channel_id,
+                text=final_text,
+                parse_mode=ParseMode.MARKDOWN
             )
-        except Exception as retry_err:
-            logger.error("Plain text bilan jo'natishda ham xato: %s", retry_err)
+            logger.info("O'yin yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("O'yin yuborishda xato (%s): %s", ch.channel_id, e)
+            try:
+                plain_text = final_text.replace("**", "").replace("*", "")
+                await bot.send_message(
+                    chat_id=ch.channel_id,
+                    text=plain_text
+                )
+            except Exception as retry_err:
+                logger.error("Plain text xato: %s", retry_err)

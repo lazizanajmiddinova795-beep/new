@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from ai_processor import AIProcessor
-from config import Config
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,15 @@ QOIDALAR:
 
 USER_PROMPT = "Bugun dam olish kuni. O'quvchilarga o'z ustida ishlash yoki dunyoqarashini kengaytirish uchun yordam beradigan 1 ta ajoyib kitob, kino, hujjatli film yoki juda foydali AI vositasi/veb-sayt tavsiya qiling."
 
-async def run_weekly_recommendation(bot: Bot, config: Config, ai_processor: AIProcessor) -> None:
+async def run_weekly_recommendation(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Har Yakshanba soat 10:00 da foydali tavsiya yuborish funksiyasi."""
     logger.info("Weekly recommendation sikli boshlandi...")
+
+    active_channels = await db.get_active_channels()
+    target_channels = [ch for ch in active_channels if ch.setting_recommendations]
+    if not target_channels:
+        logger.info("setting_recommendations yoqilgan faol kanallar yo'q.")
+        return
     
     rec_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)
     if not rec_text:
@@ -32,20 +38,21 @@ async def run_weekly_recommendation(bot: Bot, config: Config, ai_processor: AIPr
 
     final_text = f"📚 **Hafta Tavsiyasi!**\n\n{rec_text}\n\n#tavsiya #foydali #rivojlanish"
 
-    try:
-        message = await bot.send_message(
-            chat_id=config.channel_id,
-            text=final_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        logger.info("Tavsiya muvaffaqiyatli yuborildi! Message ID: %d", message.message_id)
-    except Exception as e:
-        logger.error("Tavsiya yuborishda xato: %s", e)
+    for ch in target_channels:
         try:
-            plain_text = final_text.replace("**", "").replace("*", "")
-            await bot.send_message(
-                chat_id=config.channel_id,
-                text=plain_text
+            message = await bot.send_message(
+                chat_id=ch.channel_id,
+                text=final_text,
+                parse_mode=ParseMode.MARKDOWN
             )
-        except Exception as retry_err:
-            logger.error("Plain text bilan jo'natishda ham xato: %s", retry_err)
+            logger.info("Yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("Yuborishda xato (%s): %s", ch.channel_id, e)
+            try:
+                plain_text = final_text.replace("**", "").replace("*", "")
+                await bot.send_message(
+                    chat_id=ch.channel_id,
+                    text=plain_text
+                )
+            except Exception as retry_err:
+                logger.error("Plain text xato: %s", retry_err)

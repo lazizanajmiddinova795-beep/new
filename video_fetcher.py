@@ -5,7 +5,7 @@ import random
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from ai_processor import AIProcessor
-from config import Config
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,15 @@ QOIDALAR:
 4. Odamlar o'qiganda "Shunaqasi ham bo'ladimi?!" deyishi kerak.
 """
 
-async def run_daily_video(bot: Bot, config: Config, ai_processor: AIProcessor) -> None:
+async def run_daily_video(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Har kuni soat 14:00 da qiziqarli video-fakt yuborish funksiyasi."""
     logger.info("Video fetcher sikli boshlandi...")
+
+    active_channels = await db.get_active_channels()
+    target_channels = [ch for ch in active_channels if ch.setting_videos]
+    if not target_channels:
+        logger.info("setting_videos yoqilgan faol kanallar yo'q.")
+        return
     
     # Tasodifiy video manbasini tanlash
     selected_video = random.choice(VIDEO_SOURCES)
@@ -52,22 +58,21 @@ async def run_daily_video(bot: Bot, config: Config, ai_processor: AIProcessor) -
     topic_tag = topic.replace(' ', '').replace("'", "")
     final_text = f"🎬 **Kunlik Video-Fakt**\n\n{fact_text}\n\n📹 **Videoni ko'rish:** [Shu yerga bosing]({video_url})\n\n#videofakt #qiziqarli #{topic_tag}"
 
-    try:
-        message = await bot.send_message(
-            chat_id=config.channel_id,
-            text=final_text,
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=False # Telegram videoni o'zi ochib ko'rsatishi uchun
-        )
-        logger.info("Video-fakt muvaffaqiyatli yuborildi! Message ID: %d", message.message_id)
-    except Exception as e:
-        logger.error("Video-fakt yuborishda xato: %s", e)
+    for ch in target_channels:
         try:
-            plain_text = final_text.replace("**", "").replace("*", "")
-            await bot.send_message(
-                chat_id=config.channel_id,
-                text=plain_text,
-                disable_web_page_preview=False
+            message = await bot.send_message(
+                chat_id=ch.channel_id,
+                text=final_text,
+                parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=False
             )
-        except Exception as retry_err:
-            logger.error("Plain text bilan jo'natishda ham xato: %s", retry_err)
+            logger.info("Yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("Yuborishda xato (%s): %s", ch.channel_id, e)
+            try:
+                plain_text = final_text.replace("**", "").replace("*", "")
+                await bot.send_message(
+                    chat_id=ch.channel_id,
+                    text=plain_text, disable_web_page_preview=False
+                )
+            except Exception as retry_err:
+                logger.error("Plain text xato: %s", retry_err)

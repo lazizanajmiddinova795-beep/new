@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from ai_processor import AIProcessor
-from config import Config
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,15 @@ QOIDALAR:
 
 USER_PROMPT = "Bugungi tong uchun obunachilarga ijobiy kayfiyat, motivatsiya va iliqlik ulashadigan juda ta'sirli va chiroyli ertalabki post yozib bering."
 
-async def run_emotional_post(bot: Bot, config: Config, ai_processor: AIProcessor) -> None:
+async def run_emotional_post(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Har kuni soat 09:00 da motivatsion post yaratish va yuborish funksiyasi."""
     logger.info("Emotional post sikli boshlandi...")
+
+    active_channels = await db.get_active_channels()
+    target_channels = [ch for ch in active_channels if ch.setting_emotional]
+    if not target_channels:
+        logger.info("setting_emotional yoqilgan faol kanallar yo'q.")
+        return
     
     post_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)
     if not post_text:
@@ -32,20 +38,21 @@ async def run_emotional_post(bot: Bot, config: Config, ai_processor: AIProcessor
 
     final_text = f"{post_text}\n\n#motivatsiya #tong #kayfiyat"
 
-    try:
-        message = await bot.send_message(
-            chat_id=config.channel_id,
-            text=final_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        logger.info("Emotional post muvaffaqiyatli yuborildi! Message ID: %d", message.message_id)
-    except Exception as e:
-        logger.error("Emotional post yuborishda xato: %s", e)
+    for ch in target_channels:
         try:
-            plain_text = final_text.replace("**", "").replace("*", "")
-            await bot.send_message(
-                chat_id=config.channel_id,
-                text=plain_text
+            message = await bot.send_message(
+                chat_id=ch.channel_id,
+                text=final_text,
+                parse_mode=ParseMode.MARKDOWN
             )
-        except Exception as retry_err:
-            logger.error("Plain text bilan jo'natishda ham xato: %s", retry_err)
+            logger.info("Yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("Yuborishda xato (%s): %s", ch.channel_id, e)
+            try:
+                plain_text = final_text.replace("**", "").replace("*", "")
+                await bot.send_message(
+                    chat_id=ch.channel_id,
+                    text=plain_text
+                )
+            except Exception as retry_err:
+                logger.error("Plain text xato: %s", retry_err)

@@ -17,6 +17,8 @@ from ai_processor import AIProcessor
 from config import load_config
 from database import Database
 from scheduler import run_posting_cycle, setup_scheduler
+from handlers.user_handlers import router as user_router, set_db as set_user_db
+
 
 
 # -------------------------------------------------------
@@ -129,12 +131,17 @@ async def main() -> None:
     )
     dp = Dispatcher()
 
+    # --- Routerlarni ulash ---
+    set_user_db(db)
+    dp.include_router(user_router)
+
     @dp.callback_query(F.data == "challenge_join")
     async def on_challenge_join(callback: types.CallbackQuery):
         await callback.answer(
             text="Ajoyib! O'z ustingizda ishlashdan to'xtamang! 🔥\nOmad yor bo'lsin!",
             show_alert=True
         )
+
 
     # --- Scheduler ---
     scheduler = setup_scheduler(
