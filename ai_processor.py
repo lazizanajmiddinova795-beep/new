@@ -129,6 +129,28 @@ class OpenAIProcessor:
         )
         return None
 
+    async def generate_custom_text(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """Custom text generation with OpenAI."""
+        for attempt in range(1, 4):
+            try:
+                response = await self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=800,
+                    temperature=0.7,
+                )
+                content = response.choices[0].message.content
+                if content:
+                    return content.strip()
+            except Exception as e:
+                logger.warning("OpenAI custom xato (urinish %d/3): %s", attempt, e)
+                if attempt < 3:
+                    await asyncio.sleep(2 ** attempt)
+        return None
+
 
 # -------------------------------------------------------
 # Anthropic Provider
@@ -188,6 +210,27 @@ class AnthropicProcessor:
             "Anthropic 3 marta urinishdan keyin ham muvaffaqiyatsiz: %s",
             article.title[:60],
         )
+        return None
+
+    async def generate_custom_text(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """Custom text generation with Anthropic."""
+        for attempt in range(1, 4):
+            try:
+                response = await self._client.messages.create(
+                    model=self._model,
+                    max_tokens=800,
+                    system=system_prompt,
+                    messages=[
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                content = response.content[0].text if response.content else None
+                if content:
+                    return content.strip()
+            except Exception as e:
+                logger.warning("Anthropic custom xato (urinish %d/3): %s", attempt, e)
+                if attempt < 3:
+                    await asyncio.sleep(2 ** attempt)
         return None
 
 
@@ -253,6 +296,28 @@ class GeminiProcessor:
         )
         return None
 
+    async def generate_custom_text(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """Custom text generation with Gemini."""
+        custom_model = self._genai.GenerativeModel(
+            model_name=self._model_name,
+            system_instruction=system_prompt,
+        )
+        for attempt in range(1, 4):
+            try:
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: custom_model.generate_content(user_prompt),
+                )
+                content = response.text if response.text else None
+                if content:
+                    return content.strip()
+            except Exception as e:
+                logger.warning("Gemini custom xato (urinish %d/3): %s", attempt, e)
+                if attempt < 3:
+                    await asyncio.sleep(2 ** attempt)
+        return None
+
 
 # -------------------------------------------------------
 # Asosiy Processor (facade)
@@ -311,3 +376,7 @@ class AIProcessor:
             hashtags=article.hashtags,
             article_id=article.article_id,
         )
+
+    async def generate_custom_text(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """Generates custom text using the configured AI provider."""
+        return await self._provider.generate_custom_text(system_prompt, user_prompt)

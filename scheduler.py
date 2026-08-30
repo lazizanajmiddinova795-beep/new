@@ -22,6 +22,10 @@ from config import Config
 from database import Database
 from fetcher import ArticleItem, fetch_all_feeds
 
+from games import run_daily_game
+from challenges import run_weekly_challenge
+from media_fetcher import run_media_post
+
 logger = logging.getLogger(__name__)
 
 
@@ -300,6 +304,64 @@ def setup_scheduler(
         misfire_grace_time=60,         # 60 soniya kechiksa ham ishlatadi
         coalesce=True,                  # Bir vaqtda bir nechta siklni oldini oladi
         max_instances=1,                # Parallel sikllarni bloklaydi
+    )
+
+    # Media faktlarni har kuni 18:00 da yuborish
+    async def scheduled_media() -> None:
+        try:
+            await run_media_post(bot, config, ai_processor)
+        except Exception as e:
+            logger.error("Media fakt xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_media,
+        trigger="cron",
+        hour=18,
+        minute=0,
+        id="media_post_job",
+        name="Kunlik media fakt",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # So'z o'yinlari har kuni 22:00 da yuborish
+    async def scheduled_game() -> None:
+        try:
+            await run_daily_game(bot, config, ai_processor)
+        except Exception as e:
+            logger.error("Daily game xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_game,
+        trigger="cron",
+        hour=22,
+        minute=0,
+        id="daily_game_job",
+        name="Kunlik so'z o'yini",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Haftalik chellenj har shanba 23:00 da yuborish
+    async def scheduled_challenge() -> None:
+        try:
+            await run_weekly_challenge(bot, config, ai_processor)
+        except Exception as e:
+            logger.error("Weekly challenge xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_challenge,
+        trigger="cron",
+        day_of_week="sat",
+        hour=23,
+        minute=0,
+        id="weekly_challenge_job",
+        name="Haftalik chellenj",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
     )
 
     logger.info(

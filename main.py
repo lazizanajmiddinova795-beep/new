@@ -11,6 +11,7 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram import F, types
 
 from ai_processor import AIProcessor
 from config import load_config
@@ -127,6 +128,13 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
     dp = Dispatcher()
+
+    @dp.callback_query(F.data == "challenge_join")
+    async def on_challenge_join(callback: types.CallbackQuery):
+        await callback.answer(
+            text="Ajoyib! O'z ustingizda ishlashdan to'xtamang! 🔥\nOmad yor bo'lsin!",
+            show_alert=True
+        )
 
     # --- Scheduler ---
     scheduler = setup_scheduler(
