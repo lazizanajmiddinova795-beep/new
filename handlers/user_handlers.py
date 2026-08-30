@@ -108,7 +108,7 @@ async def cmd_my_channels(message: Message):
                 ],
                 [
                     InlineKeyboardButton(
-                        text=f"{'🟢 Faol' if ch.is_active else '🔴 To\'xtatilgan'} (Kanal Holati)",
+                        text=f"{'🟢 Faol' if ch.is_active else '🔴 To`xtatilgan'} (Kanal Holati)",
                         callback_data=f"toggle_{ch.channel_id}_is_active"
                     )
                 ]
@@ -167,7 +167,7 @@ async def process_toggle_callback(callback: CallbackQuery):
                     ],
                     [
                         InlineKeyboardButton(
-                            text=f"{'🟢 Faol' if channel.is_active else '🔴 To\'xtatilgan'} (Kanal Holati)",
+                            text=f"{'🟢 Faol' if channel.is_active else '🔴 To`xtatilgan'} (Kanal Holati)",
                             callback_data=f"toggle_{channel.channel_id}_is_active"
                         )
                     ]
