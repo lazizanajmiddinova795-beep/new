@@ -58,7 +58,7 @@ async def run_daily_game(bot: Bot, db: Database, ai_processor: AIProcessor) -> N
             )
             logger.info("O'yin yuborildi: %s", ch.channel_id)
         except Exception as e:
-                logger.error("O'yin yuborishda xato (%s): %s", ch.channel_id, e)
+            logger.error("O'yin yuborishda xato (%s): %s", ch.channel_id, e)
             try:
                 plain_text = final_text.replace("**", "").replace("*", "")
                 await bot.send_message(
