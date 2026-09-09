@@ -23,6 +23,8 @@ from handlers.ad_handlers import router as ad_router, set_ad_dependencies
 from handlers.vip_handlers import router as vip_router, set_vip_db
 from handlers.gamification_handlers import router as gamification_router, set_gamification_db
 from handlers.comment_handlers import router as comment_router, set_comment_dependencies
+from handlers.template_handlers import router as template_router
+from aiogram.types import BotCommand
 
 
 
@@ -150,6 +152,24 @@ async def main() -> None:
     dp.include_router(vip_router)
     dp.include_router(gamification_router)
     dp.include_router(comment_router)
+    dp.include_router(template_router)
+
+    # --- Menyuni sozlash (Commands Menu) ---
+    commands = [
+        BotCommand(command="start", description="Botni qayta ishga tushirish"),
+        BotCommand(command="menu", description="Asosiy boshqaruv menyusi"),
+        BotCommand(command="template", description="Tayyor post shablonlarini ochish"),
+        BotCommand(command="send_ad", description="Kanalga reklama yuborish"),
+        BotCommand(command="leaderboard", description="Faollar reytingi"),
+        BotCommand(command="check_in", description="Kunlik ball yig'ish (Streak)"),
+        BotCommand(command="vip", description="VIP obuna ma'lumotlari"),
+        BotCommand(command="cancel", description="Amalni bekor qilish"),
+    ]
+    try:
+        await bot.set_my_commands(commands)
+        logger.info("Bot buyruqlari (menyusi) o'rnatildi.")
+    except Exception as e:
+        logger.error("Buyruqlarni o'rnatishda xato: %s", e)
 
     @dp.callback_query(F.data == "challenge_join")
     async def on_challenge_join(callback: types.CallbackQuery):
