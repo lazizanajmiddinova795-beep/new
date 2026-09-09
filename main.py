@@ -18,6 +18,7 @@ from config import load_config
 from database import Database
 from scheduler import run_posting_cycle, setup_scheduler
 from handlers.user_handlers import router as user_router, set_db as set_user_db
+from handlers.game_handlers import router as game_router, set_game_dependencies
 
 
 
@@ -133,7 +134,10 @@ async def main() -> None:
 
     # --- Routerlarni ulash ---
     set_user_db(db)
+    set_game_dependencies(db, ai_processor, bot)
+    
     dp.include_router(user_router)
+    dp.include_router(game_router)
 
     @dp.callback_query(F.data == "challenge_join")
     async def on_challenge_join(callback: types.CallbackQuery):

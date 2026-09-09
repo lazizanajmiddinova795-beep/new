@@ -88,6 +88,40 @@ class PublishedArticle(Base):
         return f"<PublishedArticle id={self.id} article_id='{self.article_id[:40]}...' channel_id='{self.channel_id}'>"
 
 
+class QuizSession(Base):
+    """Faol quiz (viktorina) sessiyasi."""
+    __tablename__ = "quiz_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id = Column(String(255), nullable=False, index=True)
+    is_active = Column(Boolean, default=True)
+    current_question_index = Column(Integer, default=1)
+    total_questions = Column(Integer, default=5)
+    current_correct_option = Column(String(10), nullable=True) # A, B, C yoki D
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    answers = relationship("QuizAnswer", back_populates="session", cascade="all, delete-orphan")
+
+
+class QuizAnswer(Base):
+    """Foydalanuvchilarning quizdagi javoblari."""
+    __tablename__ = "quiz_answers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("quiz_sessions.id"), nullable=False)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
+    username = Column(String(255), nullable=True)
+    question_index = Column(Integer, nullable=False)
+    is_correct = Column(Boolean, default=False)
+    answered_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('session_id', 'telegram_id', 'question_index', name='uq_user_answer'),
+    )
+
+    session = relationship("QuizSession", back_populates="answers")
+
+
 class Database:
     """
     Asinxron ma'lumotlar bazasi boshqaruvchisi.
@@ -251,3 +285,95 @@ class Database:
                 select(PublishedArticle).where(PublishedArticle.is_sent == True)
             )
             return len(result.scalars().all())
+
+    # --- Quiz (O'yin) Metodlari ---
+
+    async def get_active_quiz_session(self, channel_id: str) -> Optional[QuizSession]:
+        """Kanal uchun faol quiz sessiyasini qaytaradi."""
+        async with self._session_factory() as session:
+            res = await session.execute(
+                select(QuizSession).where(
+                    QuizSession.channel_id == channel_id,
+                    QuizSession.is_active == True
+                )
+            )
+            return res.scalar_one_or_none()
+
+    async def create_quiz_session(self, channel_id: str, total_questions: int = 5) -> QuizSession:
+        """Yangi quiz sessiyasini yaratadi va eskisini nofaol qiladi."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                # Eskilarini yopish
+                await session.execute(
+                    select(QuizSession).where(
+                        QuizSession.channel_id == channel_id,
+                        QuizSession.is_active == True
+                    )
+                )
+                # update cannot be used easily with scalar, so let's do it ORM way
+                res = await session.execute(select(QuizSession).where(QuizSession.channel_id == channel_id, QuizSession.is_active == True))
+                for old_sess in res.scalars():
+                    old_sess.is_active = False
+
+                new_session = QuizSession(channel_id=channel_id, total_questions=total_questions)
+                session.add(new_session)
+                await session.flush()
+                return new_session
+
+    async def update_quiz_session(self, session_id: int, current_question_index: int, correct_option: str, is_active: bool = True) -> None:
+        """Quiz sessiyasi holatini yangilash (yangi savolga o'tganda)."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                res = await session.execute(select(QuizSession).where(QuizSession.id == session_id))
+                quiz_sess = res.scalar_one_or_none()
+                if quiz_sess:
+                    quiz_sess.current_question_index = current_question_index
+                    quiz_sess.current_correct_option = correct_option
+                    quiz_sess.is_active = is_active
+
+    async def record_quiz_answer(self, session_id: int, telegram_id: int, username: str, question_index: int, is_correct: bool) -> bool:
+        """Foydalanuvchi javobini qayd etish. Agar allaqachon javob bergan bo'lsa False qaytaradi."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                # Tekshirish
+                res = await session.execute(
+                    select(QuizAnswer).where(
+                        QuizAnswer.session_id == session_id,
+                        QuizAnswer.telegram_id == telegram_id,
+                        QuizAnswer.question_index == question_index
+                    )
+                )
+                if res.scalar_one_or_none():
+                    return False # Allaqachon javob bergan
+
+                new_answer = QuizAnswer(
+                    session_id=session_id,
+                    telegram_id=telegram_id,
+                    username=username,
+                    question_index=question_index,
+                    is_correct=is_correct
+                )
+                session.add(new_answer)
+                return True
+
+    async def get_quiz_leaderboard(self, session_id: int) -> list[tuple[str, int]]:
+        """Sessiya uchun reytingni qaytaradi: [(username, score), ...]"""
+        from sqlalchemy import func
+        async with self._session_factory() as session:
+            # sum(is_correct) xuddi count(is_correct == True) kabi
+            stmt = (
+                select(QuizAnswer.username, func.sum(func.cast(QuizAnswer.is_correct, Integer)).label("score"))
+                .where(QuizAnswer.session_id == session_id)
+                .group_by(QuizAnswer.telegram_id, QuizAnswer.username)
+                .order_by(func.sum(func.cast(QuizAnswer.is_correct, Integer)).desc())
+                .limit(10)
+            )
+            res = await session.execute(stmt)
+            
+            leaderboard = []
+            for row in res.all():
+                username = row[0] or "Foydalanuvchi"
+                score = row[1] or 0
+                leaderboard.append((username, score))
+            return leaderboard
+

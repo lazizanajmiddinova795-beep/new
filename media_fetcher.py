@@ -43,14 +43,15 @@ async def run_media_post(bot: Bot, db: Database, ai_processor: AIProcessor) -> N
     final_text = f"{fact_text}\n\n#fakt #texnologiya #ilmfan"
 
     # 3. Telegramga yuborish
-    try:
-        photo = URLInputFile(image_url)
-        message = await bot.send_photo(
-            chat_id=config.channel_id,
-            photo=photo,
-            caption=final_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        logger.info("Media post muvaffaqiyatli yuborildi! Message ID: %d", message.message_id)
-    except Exception as e:
-        logger.error("Media post yuborishda xato: %s", e)
+    for ch in target_channels:
+        try:
+            photo = URLInputFile(image_url)
+            message = await bot.send_photo(
+                chat_id=ch.channel_id,
+                photo=photo,
+                caption=final_text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            logger.info("Media post muvaffaqiyatli yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("Media post yuborishda xato (%s): %s", ch.channel_id, e)
