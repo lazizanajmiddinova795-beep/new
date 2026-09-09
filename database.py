@@ -42,6 +42,15 @@ class User(Base):
     joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
     
+    # Gamification & Streaks
+    points = Column(Integer, default=0)
+    streak_days = Column(Integer, default=0)
+    last_active_date = Column(DateTime(timezone=True), nullable=True)
+    
+    # VIP Subscription
+    is_vip = Column(Boolean, default=False)
+    vip_until = Column(DateTime(timezone=True), nullable=True)
+    
     channels = relationship("Channel", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -120,6 +129,17 @@ class QuizAnswer(Base):
     )
 
     session = relationship("QuizSession", back_populates="answers")
+
+
+class AdCampaign(Base):
+    """Reklama postlari va ularni avtomatik o'chirish taymerlari."""
+    __tablename__ = "ad_campaigns"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id = Column(String(255), nullable=False, index=True)
+    message_id = Column(Integer, nullable=False)
+    delete_at = Column(DateTime(timezone=True), nullable=False)
+    is_deleted = Column(Boolean, default=False)
 
 
 class Database:
@@ -284,8 +304,9 @@ class Database:
 
     async def get_active_channels(self) -> list[Channel]:
         """Tizimdagi barcha faol kanallarni olish (broadcasting uchun)."""
+        from sqlalchemy.orm import selectinload
         async with self._session_factory() as session:
-            res = await session.execute(select(Channel).where(Channel.is_active == True))
+            res = await session.execute(select(Channel).options(selectinload(Channel.user)).where(Channel.is_active == True))
             return list(res.scalars().all())
 
     async def get_published_count(self) -> int:
@@ -386,4 +407,112 @@ class Database:
                 score = row[1] or 0
                 leaderboard.append((username, score))
             return leaderboard
+
+    # --- SMM, Gamification, Ads, VIP Methods ---
+
+    async def update_user_streak(self, telegram_id: int) -> int:
+        """Update daily streak for a user and return the new streak."""
+        from datetime import datetime, timezone, timedelta
+        async with self._session_factory() as session:
+            async with session.begin():
+                res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+                user = res.scalar_one_or_none()
+                if not user:
+                    return 0
+                now = datetime.now(timezone.utc)
+                if user.last_active_date:
+                    delta = now.date() - user.last_active_date.date()
+                    if delta == timedelta(days=1):
+                        user.streak_days += 1
+                    elif delta > timedelta(days=1):
+                        user.streak_days = 1
+                    # if delta == 0, streak remains same
+                else:
+                    user.streak_days = 1
+                user.last_active_date = now
+                user.points += 10 # 10 points for daily activity
+                return user.streak_days
+
+    async def add_user_points(self, telegram_id: int, points: int) -> None:
+        """Add gamification points to user."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+                user = res.scalar_one_or_none()
+                if user:
+                    user.points += points
+
+    async def get_global_leaderboard(self) -> list[User]:
+        """Get top 10 users globally by points."""
+        async with self._session_factory() as session:
+            res = await session.execute(select(User).order_by(User.points.desc()).limit(10))
+            return list(res.scalars().all())
+
+    async def set_user_vip(self, telegram_id: int, days: int) -> None:
+        """Grant VIP status for N days."""
+        from datetime import datetime, timezone, timedelta
+        async with self._session_factory() as session:
+            async with session.begin():
+                res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+                user = res.scalar_one_or_none()
+                if user:
+                    user.is_vip = True
+                    user.vip_until = datetime.now(timezone.utc) + timedelta(days=days)
+
+    async def check_user_vip(self, telegram_id: int) -> bool:
+        """Check if user has active VIP status."""
+        from datetime import datetime, timezone
+        async with self._session_factory() as session:
+            res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            user = res.scalar_one_or_none()
+            if not user or not user.is_vip:
+                return False
+            if user.vip_until and user.vip_until < datetime.now(timezone.utc):
+                return False
+            return True
+
+    async def get_expired_vips(self) -> list[User]:
+        """Get list of users whose VIP has expired."""
+        from datetime import datetime, timezone
+        async with self._session_factory() as session:
+            res = await session.execute(
+                select(User).where(User.is_vip == True, User.vip_until < datetime.now(timezone.utc))
+            )
+            return list(res.scalars().all())
+
+    async def remove_vip(self, telegram_id: int) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+                user = res.scalar_one_or_none()
+                if user:
+                    user.is_vip = False
+                    user.vip_until = None
+
+    async def add_ad_campaign(self, channel_id: str, message_id: int, delete_at: datetime) -> None:
+        """Record an ad campaign for auto-deletion."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                new_ad = AdCampaign(channel_id=channel_id, message_id=message_id, delete_at=delete_at)
+                session.add(new_ad)
+
+    async def get_pending_ads_to_delete(self) -> list[AdCampaign]:
+        """Get ads that should be deleted now."""
+        from datetime import datetime, timezone
+        async with self._session_factory() as session:
+            res = await session.execute(
+                select(AdCampaign).where(
+                    AdCampaign.is_deleted == False,
+                    AdCampaign.delete_at <= datetime.now(timezone.utc)
+                )
+            )
+            return list(res.scalars().all())
+
+    async def mark_ad_deleted(self, ad_id: int) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                res = await session.execute(select(AdCampaign).where(AdCampaign.id == ad_id))
+                ad = res.scalar_one_or_none()
+                if ad:
+                    ad.is_deleted = True
 

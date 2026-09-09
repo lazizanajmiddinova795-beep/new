@@ -20,6 +20,9 @@ from scheduler import run_posting_cycle, setup_scheduler
 from handlers.user_handlers import router as user_router, set_db as set_user_db
 from handlers.game_handlers import router as game_router, set_game_dependencies
 from handlers.ad_handlers import router as ad_router, set_ad_dependencies
+from handlers.vip_handlers import router as vip_router, set_vip_db
+from handlers.gamification_handlers import router as gamification_router, set_gamification_db
+from handlers.comment_handlers import router as comment_router, set_comment_dependencies
 
 
 
@@ -137,10 +140,16 @@ async def main() -> None:
     set_user_db(db)
     set_game_dependencies(db, ai_processor, bot)
     set_ad_dependencies(db, bot)
+    set_vip_db(db)
+    set_gamification_db(db)
+    set_comment_dependencies(ai_processor)
     
     dp.include_router(user_router)
     dp.include_router(game_router)
     dp.include_router(ad_router)
+    dp.include_router(vip_router)
+    dp.include_router(gamification_router)
+    dp.include_router(comment_router)
 
     @dp.callback_query(F.data == "challenge_join")
     async def on_challenge_join(callback: types.CallbackQuery):

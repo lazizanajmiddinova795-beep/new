@@ -29,6 +29,9 @@ from media_fetcher import run_media_post
 from emotional_posts import run_emotional_post
 from video_fetcher import run_daily_video
 from recommendations import run_weekly_recommendation
+from services.smm_planner import run_morning_smm, run_evening_smm
+from services.ad_manager import check_and_delete_ads
+from datetime import datetime, timezone
 
 
 logger = logging.getLogger(__name__)
@@ -188,10 +191,19 @@ async def run_posting_cycle(
 
         # Har bir kanalga yuboramiz
         for ch in channels_to_send:
+            # VIP tekshiruvi
+            is_vip = ch.user and ch.user.is_vip and (not ch.user.vip_until or ch.user.vip_until >= datetime.now(timezone.utc))
+            
+            if is_vip:
+                post_text = processed.text
+            else:
+                half = len(processed.text) // 2
+                post_text = processed.text[:half] + "\n\n🔒 **... Ushbu postning to'liq versiyasini o'qish uchun botga kirib VIP obuna xarid qiling!**"
+
             message_id = await _send_post_to_channel(
                 bot=bot,
                 channel_id=ch.channel_id,
-                post_text=processed.text,
+                post_text=post_text,
                 source_url=processed.source_url,
                 delay_seconds=config.post_delay_seconds,
             )
@@ -359,6 +371,62 @@ def setup_scheduler(
         minute=0,
         id="weekly_recommendation_job",
         name="Haftalik tavsiya",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # SMM Planner: Ertalab 08:00
+    async def scheduled_morning_smm() -> None:
+        try:
+            await run_morning_smm(bot, db, ai_processor)
+        except Exception as e:
+            logger.error("Morning SMM xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_morning_smm,
+        trigger="cron",
+        hour=8,
+        minute=0,
+        id="morning_smm_job",
+        name="Ertalabki SMM",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # SMM Planner: Kechqurun 21:00
+    async def scheduled_evening_smm() -> None:
+        try:
+            await run_evening_smm(bot, db, ai_processor)
+        except Exception as e:
+            logger.error("Evening SMM xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_evening_smm,
+        trigger="cron",
+        hour=21,
+        minute=0,
+        id="evening_smm_job",
+        name="Kechki SMM",
+        misfire_grace_time=300,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Ad Manager: Har 1 soatda reklamalarni tekshirish (Auto-Delete)
+    async def scheduled_ad_manager() -> None:
+        try:
+            await check_and_delete_ads(bot, db)
+        except Exception as e:
+            logger.error("Ad Manager xatosi: %s", e)
+
+    scheduler.add_job(
+        func=scheduled_ad_manager,
+        trigger="interval",
+        minutes=60,
+        id="ad_manager_job",
+        name="Reklama Auto-Delete",
         misfire_grace_time=300,
         coalesce=True,
         max_instances=1,
