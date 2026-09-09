@@ -3,6 +3,7 @@
 import logging
 from aiogram import Bot
 from aiogram.enums import ParseMode
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from ai_processor import AIProcessor
 from database import Database
 
@@ -38,21 +39,32 @@ async def run_daily_game(bot: Bot, db: Database, ai_processor: AIProcessor) -> N
 
     final_text = f"🎮 **Kechki Mantiq O'yini!**\n\n{game_text}\n\n#oyin #mantiq #quiz"
 
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="A", callback_data="game_ans"),
+            InlineKeyboardButton(text="B", callback_data="game_ans"),
+            InlineKeyboardButton(text="C", callback_data="game_ans"),
+            InlineKeyboardButton(text="D", callback_data="game_ans")
+        ]
+    ])
+
     for ch in target_channels:
         try:
             message = await bot.send_message(
                 chat_id=ch.channel_id,
                 text=final_text,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=keyboard
             )
             logger.info("O'yin yuborildi: %s", ch.channel_id)
         except Exception as e:
-            logger.error("O'yin yuborishda xato (%s): %s", ch.channel_id, e)
+                logger.error("O'yin yuborishda xato (%s): %s", ch.channel_id, e)
             try:
                 plain_text = final_text.replace("**", "").replace("*", "")
                 await bot.send_message(
                     chat_id=ch.channel_id,
-                    text=plain_text
+                    text=plain_text,
+                    reply_markup=keyboard
                 )
             except Exception as retry_err:
                 logger.error("Plain text xato: %s", retry_err)
