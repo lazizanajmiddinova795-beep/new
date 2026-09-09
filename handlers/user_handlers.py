@@ -29,7 +29,7 @@ async def cmd_start(message: Message):
     )
     await message.answer(text)
 
-@router.message(Command("add_channel"))
+@router.message(Command("add_channel", "addchannel"))
 async def cmd_add_channel(message: Message):
     text = (
         "➕ **Kanal qo'shish bo'yicha yo'riqnoma:**\n\n"
@@ -69,7 +69,7 @@ async def handle_forwarded_message(message: Message):
     else:
         await message.answer("Iltimos, xabarni aynan **kanaldan** forward qiling (guruh yoki shaxsiy chatdan emas).")
 
-@router.message(Command("my_channels"))
+@router.message(Command("my_channels", "mychannels"))
 async def cmd_my_channels(message: Message):
     """Foydalanuvchi kanallari va sozlamalarini chiqarish."""
     channels = await db.get_user_channels(message.from_user.id)
