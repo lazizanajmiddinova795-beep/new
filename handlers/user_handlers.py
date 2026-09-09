@@ -32,12 +32,12 @@ async def cmd_start(message: Message):
 @router.message(Command("add_channel", "addchannel"))
 async def cmd_add_channel(message: Message):
     text = (
-        "➕ **Kanal qo'shish bo'yicha yo'riqnoma:**\n\n"
-        "1. Meni (@{}) o'z kanalingizga **Administrator** sifatida qo'shing (Post yozish huquqi bilan).\n"
-        "2. Kanalingizga kiring va istalgan postni (yoki yangi yozib) menga **Forward** (Uzatish) qiling.\n\n"
+        "➕ <b>Kanal qo'shish bo'yicha yo'riqnoma:</b>\n\n"
+        "1. Meni (@{}) o'z kanalingizga <b>Administrator</b> sifatida qo'shing (Post yozish huquqi bilan).\n"
+        "2. Kanalingizga kiring va istalgan postni (yoki yangi yozib) menga <b>Forward</b> (Uzatish) qiling.\n\n"
         "Shundan so'ng kanalingiz ro'yxatga olinadi!"
     ).format((await message.bot.get_me()).username)
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(F.forward_origin)
 async def handle_forwarded_message(message: Message):
