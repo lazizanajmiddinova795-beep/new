@@ -6,6 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import URLInputFile
 from ai_processor import AIProcessor
 from database import Database
+from broadcaster import safe_send_photo
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +45,11 @@ async def run_media_post(bot: Bot, db: Database, ai_processor: AIProcessor) -> N
 
     # 3. Telegramga yuborish
     for ch in target_channels:
-        try:
-            photo = URLInputFile(image_url)
-            message = await bot.send_photo(
-                chat_id=ch.channel_id,
-                photo=photo,
-                caption=final_text,
-                parse_mode=ParseMode.MARKDOWN
-            )
-            logger.info("Media post muvaffaqiyatli yuborildi: %s", ch.channel_id)
-        except Exception as e:
-            logger.error("Media post yuborishda xato (%s): %s", ch.channel_id, e)
+        await safe_send_photo(
+            bot=bot,
+            chat_id=ch.channel_id,
+            photo=image_url,
+            caption=final_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        logger.info("Media post yuborishga urinildi: %s", ch.channel_id)

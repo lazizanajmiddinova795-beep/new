@@ -5,6 +5,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from ai_processor import AIProcessor
 from database import Database
+from broadcaster import safe_send_message
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +40,19 @@ async def run_emotional_post(bot: Bot, db: Database, ai_processor: AIProcessor) 
     final_text = f"{post_text}\n\n#motivatsiya #tong #kayfiyat"
 
     for ch in target_channels:
-        try:
-            message = await bot.send_message(
+        success = await safe_send_message(
+            bot=bot,
                 chat_id=ch.channel_id,
                 text=final_text,
                 parse_mode=ParseMode.MARKDOWN
-            )
+        )
+        if success:
             logger.info("Yuborildi: %s", ch.channel_id)
-        except Exception as e:
-            logger.error("Yuborishda xato (%s): %s", ch.channel_id, e)
-            try:
-                plain_text = final_text.replace("**", "").replace("*", "")
-                await bot.send_message(
-                    chat_id=ch.channel_id,
-                    text=plain_text
-                )
-            except Exception as retry_err:
-                logger.error("Plain text xato: %s", retry_err)
+        else:
+            logger.error("Yuborishda xato, oddiy matnda urinib ko'ramiz: %s", ch.channel_id)
+            plain_text = final_text.replace("**", "").replace("*", "")
+            await safe_send_message(
+                bot=bot,
+                chat_id=ch.channel_id,
+                text=plain_text
+            )

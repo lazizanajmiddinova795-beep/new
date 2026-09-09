@@ -141,10 +141,14 @@ class Database:
             database_url,
             echo=False,           # SQL loglarni ko'rish uchun True qiling
             pool_pre_ping=True,
-            connect_args={"check_same_thread": False}
+            connect_args={"check_same_thread": False, "timeout": 20}
             if "sqlite" in database_url
             else {},
         )
+        
+        # SQLite uchun asinxron ulash orqali WAL rejimiga o'tish SQLAlchemy eventlari orqali biroz qiyin bo'lishi mumkin.
+        # Buning o'rniga biz aiosqlite parametrlariga tayanamiz va ulanishda tez-tez 'database is locked' ni oldini olish uchun timeout 20s qo'ydik.
+        
         self._session_factory = async_sessionmaker(
             bind=self._engine,
             class_=AsyncSession,
@@ -154,9 +158,15 @@ class Database:
 
     async def create_tables(self) -> None:
         """Barcha jadvallarni yaratadi (agar mavjud bo'lmasa)."""
+        from sqlalchemy import text
         async with self._engine.begin() as conn:
+            # WAL rejimini yoqish (ko'p o'qish/yozishlar tezligi va lock-larni oldini olish uchun)
+            if "sqlite" in self._engine.url.drivername:
+                await conn.execute(text("PRAGMA journal_mode=WAL;"))
+                await conn.execute(text("PRAGMA synchronous=NORMAL;"))
+                
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Jadvallar tekshirildi / yaratildi.")
+        logger.info("Jadvallar tekshirildi / yaratildi (WAL mode).")
 
     async def dispose(self) -> None:
         """Engine ulanishlarini yopadi."""

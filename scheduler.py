@@ -21,6 +21,7 @@ from ai_processor import AIProcessor
 from config import Config
 from database import Database
 from fetcher import ArticleItem, fetch_all_feeds
+from broadcaster import safe_send_message
 
 from games import run_daily_game
 from challenges import run_weekly_challenge
@@ -63,38 +64,19 @@ async def _send_post_to_channel(
     keyboard = _make_inline_keyboard(source_url)
 
     try:
-        message = await bot.send_message(
+        success = await safe_send_message(
+            bot=bot,
             chat_id=channel_id,
             text=post_text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
-            disable_web_page_preview=False,
+            disable_web_page_preview=False
         )
-        logger.info(
-            "Post muvaffaqiyatli yuborildi! Message ID: %d", message.message_id
-        )
-        await asyncio.sleep(delay_seconds)  # Rate limit
-        return message.message_id
-
-    except TelegramRetryAfter as e:
-        logger.warning(
-            "Telegram Rate Limit! %d soniya kutiladi...", e.retry_after
-        )
-        await asyncio.sleep(e.retry_after + 1)
-        # Bir marta qayta urinish
-        try:
-            message = await bot.send_message(
-                chat_id=channel_id,
-                text=post_text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=keyboard,
-                disable_web_page_preview=False,
-            )
-            await asyncio.sleep(delay_seconds)
-            return message.message_id
-        except Exception as retry_err:
-            logger.error("Rate Limit dan keyin ham xato: %s", retry_err)
-            return None
+        if success:
+            logger.info("Post muvaffaqiyatli yuborildi! (Kanal: %s)", channel_id)
+            await asyncio.sleep(delay_seconds)  # Rate limit
+            return 1 # (yuborildi)
+        return None
 
     except TelegramForbiddenError:
         logger.error(
@@ -117,14 +99,16 @@ async def _send_post_to_channel(
             logger.info("Markdown xatosi, plain text bilan qayta yuborilmoqda...")
             try:
                 plain_text = post_text.replace("**", "").replace("*", "")
-                message = await bot.send_message(
+                success = await safe_send_message(
+                    bot=bot,
                     chat_id=channel_id,
                     text=plain_text,
                     reply_markup=keyboard,
                     disable_web_page_preview=False,
                 )
-                await asyncio.sleep(delay_seconds)
-                return message.message_id
+                if success:
+                    await asyncio.sleep(delay_seconds)
+                    return 1
             except Exception as plain_err:
                 logger.error("Plain text bilan ham xato: %s", plain_err)
         return None

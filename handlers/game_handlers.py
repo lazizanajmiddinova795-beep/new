@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from database import Database, QuizSession
 from ai_processor import AIProcessor
+from broadcaster import safe_send_message
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -66,6 +67,12 @@ async def run_quiz_cycle(channel_id: str, total_questions: int = 5):
         prompt = f"Qiyinlik darajasi o'rtacha bo'lgan {i}-savolni yarating."
         ai_response = await ai.generate_custom_text(SYSTEM_PROMPT, prompt)
         
+        if not ai_response:
+            logger.error("AI bo'sh javob qaytardi, ehtimol limit tugagan.")
+            await safe_send_message(bot_instance, chat_id=channel_id, text="Savol tayyorlashda xatolik yuz berdi (Server band). O'yin davom etadi...")
+            await asyncio.sleep(40)
+            continue
+            
         try:
             # Markdown code blocklarni tozalash (agar AI qo'shgan bo'lsa)
             clean_json = ai_response.replace("```json", "").replace("```", "").strip()
@@ -92,20 +99,21 @@ async def run_quiz_cycle(channel_id: str, total_questions: int = 5):
                 ]
             ])
             
-            await bot_instance.send_message(
+            await safe_send_message(
+                bot=bot_instance,
                 chat_id=channel_id,
                 text=text,
                 parse_mode="Markdown",
                 reply_markup=keyboard
             )
             
-            # Keyingi savolgacha kutish (masalan 20 soniya, real loyihada ko'proq bo'lishi mumkin)
-            await asyncio.sleep(20)
+            # Keyingi savolgacha kutish
+            await asyncio.sleep(40)
             
         except Exception as e:
             logger.error("Savol generatsiyasida xato: %s", e)
-            await bot_instance.send_message(chat_id=channel_id, text="Savol tayyorlashda xatolik yuz berdi. O'yin davom etadi...")
-            await asyncio.sleep(10)
+            await safe_send_message(bot_instance, chat_id=channel_id, text="Savol tayyorlashda kutilmagan xatolik yuz berdi.")
+            await asyncio.sleep(40)
             
     # O'yin tugadi. Sessiyani nofaol qilish va reytingni chiqarish.
     await db.update_quiz_session(session.id, current_question_index=total_questions, correct_option="", is_active=False)
@@ -117,17 +125,17 @@ async def send_leaderboard(channel_id: str, session_id: int):
     leaderboard = await db.get_quiz_leaderboard(session_id)
     
     if not leaderboard:
-        await bot_instance.send_message(chat_id=channel_id, text="🏆 **Bugungi O'yin Natijalari**\n\nHech kim savollarga to'g'ri javob topa olmadi yoki ishtirok etmadi 😢")
+        await safe_send_message(bot_instance, chat_id=channel_id, text="🏆 **Bugungi O'yin Natijalari**\n\nHech kim savollarga to'g'ri javob topa olmadi yoki ishtirok etmadi 😢")
         return
         
     medals = ["🥇", "🥈", "🥉", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅"]
     text = "🏆 **Bugungi O'yin Natijalari va Reytingi**\n\n"
     
     for idx, (username, score) in enumerate(leaderboard):
-        medal = medals[idx] if idx < len(medals) else "🎗"
+        medal = medals[idx] if idx < len(medals) else "🏅"
         text += f"{idx + 1}. {medal} {username} — {score}/5 ball\n"
         
-    await bot_instance.send_message(chat_id=channel_id, text=text, parse_mode="Markdown")
+    await safe_send_message(bot_instance, chat_id=channel_id, text=text, parse_mode="Markdown")
 
 
 @router.callback_query(F.data.startswith("quiz_"))

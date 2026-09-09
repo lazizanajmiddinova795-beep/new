@@ -6,6 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from ai_processor import AIProcessor
 from database import Database
+from broadcaster import safe_send_message
 
 logger = logging.getLogger(__name__)
 
