@@ -177,7 +177,7 @@ class Database:
         logger.info("Ma'lumotlar bazasi engine yaratildi: %s", database_url)
 
     async def create_tables(self) -> None:
-        """Barcha jadvallarni yaratadi (agar mavjud bo'lmasa)."""
+        """Ma'lumotlar bazasi jadvallarini yaratadi (agar mavjud bo'lmasa) va migratsiya qiladi."""
         from sqlalchemy import text
         async with self._engine.begin() as conn:
             # WAL rejimini yoqish (ko'p o'qish/yozishlar tezligi va lock-larni oldini olish uchun)
@@ -186,7 +186,27 @@ class Database:
                 await conn.execute(text("PRAGMA synchronous=NORMAL;"))
                 
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Jadvallar tekshirildi / yaratildi (WAL mode).")
+            
+            # Xavfsiz SQLite migratsiyalari (ustunlarni tekshirib qo'shish)
+            try:
+                # users jadvalidagi ustunlarni tekshiramiz
+                res = await conn.execute(text("PRAGMA table_info(users)"))
+                columns = [row[1] for row in res.fetchall()]
+                
+                if "points" not in columns:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0"))
+                if "streak_days" not in columns:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0"))
+                if "last_active_date" not in columns:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN last_active_date DATETIME"))
+                if "is_vip" not in columns:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN is_vip BOOLEAN DEFAULT 0"))
+                if "vip_until" not in columns:
+                    await conn.execute(text("ALTER TABLE users ADD COLUMN vip_until DATETIME"))
+            except Exception as e:
+                logger.error("Migratsiya vaqtida xatolik: %s", e)
+                
+        logger.info("Jadvallar tekshirildi / yaratildi / migratsiya qilindi (WAL mode).")
 
     async def dispose(self) -> None:
         """Engine ulanishlarini yopadi."""
