@@ -35,7 +35,8 @@ from aiogram.types import BotCommand
 def setup_logging(log_level: str = "INFO") -> None:
     """Logging ni konsol va fayl uchun sozlaydi."""
     Path("logs").mkdir(exist_ok=True)
-
+    Path("data").mkdir(exist_ok=True) # Bazani saqlash uchun data papkasi
+    
     # Windows cmd/PowerShell da UTF-8 encoding muammosini hal qilish
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
