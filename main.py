@@ -121,8 +121,17 @@ async def main() -> None:
     db = Database(config.database_url)
     try:
         await db.create_tables()
+        
+        # Avtomatik asosiy kanalni (config.channel_id) bazaga qo'shib qo'yamiz.
+        # Bu Render bepul serverlarida baza o'chib ketganida bot kanalni unutib qo'yishini oldini oladi.
+        await db.get_or_create_user(111111111, "SystemAdmin")
+        await db.add_channel(111111111, config.channel_id, "Asosiy Kanal")
+        # Tizim kanaliga VIP status beramiz (Postlar to'liq chiqishi uchun)
+        await db.set_user_vip(111111111, 3650)
+        logger.info("Asosiy kanal (%s) muvaffaqiyatli avto-ro'yxatga olindi.", config.channel_id)
+        
     except Exception as e:
-        logger.critical("Baza yaratib bo'lmadi: %s", e, exc_info=True)
+        logger.critical("Baza yaratish yoki auto-kanal qo'shishda xato: %s", e, exc_info=True)
         sys.exit(1)
 
     # --- AI Processor ---

@@ -139,6 +139,15 @@ async def _fetch_feed_async(
                 link = getattr(entry, "link", "") or url
                 summary = _extract_summary(entry)
                 published = getattr(entry, "published", None)
+                published_parsed = getattr(entry, "published_parsed", None)
+
+                if published_parsed:
+                    from time import mktime
+                    from datetime import datetime, timezone, timedelta
+                    dt = datetime.fromtimestamp(mktime(published_parsed), timezone.utc)
+                    # Faqat oxirgi 6 soat ichida chiqqan yangiliklarni olamiz (Render DB o'chib ketsa spam bo'lmasligi uchun)
+                    if datetime.now(timezone.utc) - dt > timedelta(hours=6):
+                        continue
 
                 if not title or not link:
                     continue
