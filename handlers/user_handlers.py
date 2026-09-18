@@ -180,10 +180,3 @@ async def process_toggle_callback(callback: CallbackQuery):
     else:
         await callback.answer("Xato ma'lumot formati.")
 
-@router.callback_query(F.data == "game_ans")
-async def game_answer_callback(callback: CallbackQuery):
-    await callback.answer(
-        "✅ Javobingiz qabul qilindi!\n\n💡 To'g'ri javobni bilish uchun post tagidagi qoraytirilgan (spoiler) so'z ustiga bosing.", 
-        show_alert=True
-    )
-

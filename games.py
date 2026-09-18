@@ -10,18 +10,26 @@ from broadcaster import safe_send_message
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Siz qiziqarli so'z o'yinlari, mantiqiy topishmoqlar va viktorinalar tuzuvchi ekspertsiz.
-Vazifangiz har kuni obunachilar uchun mantiqiy, qiziqarli va "normal" odamlar ham topa oladigan bitta topishmoq yoki so'z o'yini yaratish.
+SYSTEM_PROMPT = """Siz qiziqarli mantiqiy topishmoqlar va viktorinalar tuzuvchi ekspertsiz.
+Vazifangiz har kuni obunachilar uchun mantiqiy, qiziqarli va "normal" odamlar ham topa oladigan bitta o'yin yaratish.
 
 QOIDALAR:
-1. O'yin 3 ta tilda yozilishi shart: O'zbekcha (asosiy), Inglizcha va Ruscha.
-2. Har bir til uchun bitta blok qiling: savol va uning variantlari (yoki ishoralari).
-3. Postning eng pastida hamma tillar uchun umumiy javobni SPOILER tagida yashiring, ya'ni javobni || mana shunday || qavslar ichida yozing.
-4. Qiziqarli emojilar ishlating. Format chiroyli va Markdown ga mos bo'lsin.
-5. Hech qanday HTML ishlatmang, faqat Telegram Markdown (bold, italic va spoiler ||javob||).
+1. Siz FAQAT VA FAQAT sof JSON formatida javob qaytarishingiz shart. Boshqa hech qanday izoh qo'shmang.
+2. Savol (question) matni O'zbek tilida bo'lsin va umumiy uzunligi 250 belgidan (harfdan) oshmasin.
+3. To'rtta qisqa variant (options) bering.
+4. To'g'ri javobning indeksini (correct_option_id) 0 dan 3 gacha bo'lgan raqam bilan ko'rsating.
+5. To'g'ri javob nega to'g'ri ekanligini qisqa tushuntirib bering (explanation). Maksimum 150 belgi.
+
+JSON FORMATI:
+{
+  "question": "Mantiqiy savolni bu yerga yozing...",
+  "options": ["A variant", "B variant", "C variant", "D variant"],
+  "correct_option_id": 1,
+  "explanation": "Chunki..."
+}
 """
 
-USER_PROMPT = "Bugun uchun juda qiziqarli mantiqiy topishmoq yoki so'z o'yini tuzib bering. Uchta tilda bo'lsin. Javobni eng pastda spoiler qilib yozing."
+USER_PROMPT = "Bugun uchun juda qiziqarli mantiqiy topishmoq tuzib bering. Faqat JSON qaytaring."
 
 async def run_daily_game(bot: Bot, db: Database, ai_processor: AIProcessor) -> None:
     """Har kuni soat 22:00 da o'yin yaratish va yuborish funksiyasi."""
@@ -33,38 +41,49 @@ async def run_daily_game(bot: Bot, db: Database, ai_processor: AIProcessor) -> N
         logger.info("O'yinlar yoqilgan faol kanallar yo'q.")
         return
 
-    game_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)
-    if not game_text:
-        logger.error("O'yin uchun AI matn yarata olmadi.")
+    json_text = await ai_processor.generate_custom_text(SYSTEM_PROMPT, USER_PROMPT)
+    if not json_text:
+        logger.error("O'yin uchun AI matn (JSON) yarata olmadi.")
         return
 
-    final_text = f"🎮 **Kechki Mantiq O'yini!**\n\n{game_text}\n\n#oyin #mantiq #quiz"
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="A", callback_data="game_ans"),
-            InlineKeyboardButton(text="B", callback_data="game_ans"),
-            InlineKeyboardButton(text="C", callback_data="game_ans"),
-            InlineKeyboardButton(text="D", callback_data="game_ans")
-        ]
-    ])
+    import json
+    import re
+    
+    try:
+        # Markdown kod bloki (```json ... ```) bilan kelsa tozalash
+        json_text = re.sub(r'```(?:json)?\n?(.*?)\n?```', r'\1', json_text, flags=re.DOTALL).strip()
+        data = json.loads(json_text)
+        
+        question = data.get("question", "Qiziqarli mantiqiy savol:")
+        options = data.get("options", ["A", "B", "C", "D"])
+        correct_option_id = data.get("correct_option_id", 0)
+        explanation = data.get("explanation", "To'g'ri javob!")
+        
+        # Telegram API cheklovlari
+        if len(question) > 300:
+            question = question[:295] + "..."
+        if len(explanation) > 200:
+            explanation = explanation[:195] + "..."
+        
+        for i in range(len(options)):
+            if len(options[i]) > 100:
+                options[i] = options[i][:95] + "..."
+                
+    except Exception as e:
+        logger.error("JSON parse xatosi: %s | Text: %s", e, json_text)
+        return
 
     for ch in target_channels:
-        success = await safe_send_message(
-            bot=bot,
-            chat_id=ch.channel_id,
-            text=final_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=keyboard
-        )
-        if success:
-            logger.info("O'yin yuborildi: %s", ch.channel_id)
-        else:
-            logger.error("O'yin yuborishda xato, oddiy matnda urinib ko'ramiz: %s", ch.channel_id)
-            plain_text = final_text.replace("**", "").replace("*", "")
-            await safe_send_message(
-                bot=bot,
+        try:
+            await bot.send_poll(
                 chat_id=ch.channel_id,
-                text=plain_text,
-                reply_markup=keyboard
+                question=question,
+                options=options,
+                type="quiz",
+                correct_option_id=correct_option_id,
+                explanation=explanation,
+                is_anonymous=True
             )
+            logger.info("Native Quiz yuborildi: %s", ch.channel_id)
+        except Exception as e:
+            logger.error("Native Quiz yuborishda xato: %s | Kanal: %s", e, ch.channel_id)
