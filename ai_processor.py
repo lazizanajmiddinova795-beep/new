@@ -240,23 +240,21 @@ class AnthropicProcessor:
 # -------------------------------------------------------
 
 class GeminiProcessor:
-    """Google Gemini API orqali maqolalarni qayta ishlaydi."""
+    """Google Gemini API orqali maqolalarni qayta ishlaydi (yangi google-genai SDK)."""
 
     def __init__(self, api_key: str, model: str) -> None:
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types as genai_types
             self._genai = genai
+            self._types = genai_types
         except ImportError:
             raise ImportError(
-                "google-generativeai paketi o'rnatilmagan. "
-                "Iltimos: pip install google-generativeai"
+                "google-genai paketi o'rnatilmagan. "
+                "Iltimos: pip install google-genai"
             )
-        genai.configure(api_key=api_key)
+        self._client = genai.Client(api_key=api_key)
         self._model_name = model
-        self._model = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=SYSTEM_PROMPT,
-        )
         logger.info("Gemini processor tayyor. Model: %s", model)
 
     async def process(self, article: ArticleItem) -> Optional[str]:
@@ -275,7 +273,13 @@ class GeminiProcessor:
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
-                    lambda: self._model.generate_content(user_message),
+                    lambda: self._client.models.generate_content(
+                        model=self._model_name,
+                        contents=user_message,
+                        config=self._types.GenerateContentConfig(
+                            system_instruction=SYSTEM_PROMPT,
+                        ),
+                    ),
                 )
                 content = response.text if response.text else None
                 if content:
@@ -298,16 +302,18 @@ class GeminiProcessor:
 
     async def generate_custom_text(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         """Custom text generation with Gemini."""
-        custom_model = self._genai.GenerativeModel(
-            model_name=self._model_name,
-            system_instruction=system_prompt,
-        )
         for attempt in range(1, 4):
             try:
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
-                    lambda: custom_model.generate_content(user_prompt),
+                    lambda: self._client.models.generate_content(
+                        model=self._model_name,
+                        contents=user_prompt,
+                        config=self._types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                        ),
+                    ),
                 )
                 content = response.text if response.text else None
                 if content:
