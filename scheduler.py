@@ -192,7 +192,16 @@ async def run_posting_cycle(
         # Har bir kanalga yuboramiz
         for ch in channels_to_send:
             # VIP tekshiruvi
-            is_vip = ch.user and ch.user.is_vip and (not ch.user.vip_until or ch.user.vip_until >= datetime.now(timezone.utc))
+            is_vip = False
+            if ch.user and ch.user.is_vip:
+                vu = ch.user.vip_until
+                if not vu:
+                    is_vip = True
+                else:
+                    if vu.tzinfo is None:
+                        vu = vu.replace(tzinfo=timezone.utc)
+                    if vu >= datetime.now(timezone.utc):
+                        is_vip = True
             
             if is_vip:
                 post_text = processed.text
