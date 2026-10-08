@@ -231,16 +231,16 @@ async def main() -> None:
     logger.info("Scheduler ishga tushdi.")
 
     # --- Darhol birinchi sikl ---
-    logger.info("Birinchi posting sikli darhol boshlanmoqda...")
+    logger.info("Birinchi posting sikli darhol boshlanmoqda (fondagi vazifa sifatida)...")
     try:
-        await run_posting_cycle(
+        asyncio.create_task(run_posting_cycle(
             bot=bot,
             db=db,
             ai_processor=ai_processor,
             config=config,
-        )
+        ))
     except Exception as e:
-        logger.error("Birinchi siklda xato: %s", e, exc_info=True)
+        logger.error("Birinchi sikl vazifasini yaratishda xato: %s", e, exc_info=True)
 
     # --- Polling boshlash ---
     logger.info("Bot polling boshlandi. To'xtatish uchun Ctrl+C bosing.")
